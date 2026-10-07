@@ -1,5 +1,5 @@
 const Plugin = {
-    install(Vue, options = {}) {
+    install(Vue) {
         // adding an instance method
         Vue.prototype.$addLaravelErrors = addToErrorBag;
     },
@@ -59,6 +59,5 @@ function loopThroughErrors(data) {
         return data;
     }
 }
-
 
 export default Plugin;
