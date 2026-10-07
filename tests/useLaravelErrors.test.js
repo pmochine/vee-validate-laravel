@@ -720,6 +720,22 @@ describe('fixes of the Codex review', () => {
         expect(laravel.errors.value).toEqual({});
     });
 
+    it('works in a browser without String.prototype.matchAll (ES2019)', async () => {
+        const { form, laravel } = mountForm([], { formOptions: { initialValues: { users: [{ name: 'a' }] } } });
+        const { matchAll } = String.prototype;
+        // Simulates an older browser
+        delete String.prototype.matchAll;
+        try {
+            laravel.set(laravelError({ 'users.0.name': ['taken'] }));
+        } finally {
+            // eslint-disable-next-line no-extend-native
+            String.prototype.matchAll = matchAll;
+        }
+        await settle();
+
+        expect(form.errors.value['users[0].name']).toBe('taken');
+    });
+
     it('reads no form values while no server error is active', async () => {
         let reads = 0;
         const scope = effectScope();

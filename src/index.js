@@ -39,9 +39,16 @@ function getValue(values, path) {
 
 // The paths of the array items on the way to a path:
 // users[0].tags[1] gives users[0] and users[0].tags[1]
+// (replace() with a callback, because matchAll() is newer than the ES2019 build target)
 function rowPaths(path) {
-    return [...path.matchAll(/\[\d+\]/g)]
-        .map((match) => path.slice(0, match.index + match[0].length));
+    const paths = [];
+    path.replace(/\[\d+\]/g, (match, offset) => {
+        paths.push(path.slice(0, offset + match.length));
+
+        return match;
+    });
+
+    return paths;
 }
 
 function isEqual(a, b) {
