@@ -26,7 +26,7 @@ Version 2 is for Vue 3 and vee-validate 4. Version 1.x for Vue 2 is on the `1x` 
 
 ### Development
 
-- Tests use Vitest 5 and jsdom 30. The development tools need Node.js 22.22.2 or a newer 22.x, Node.js 24.15 or a newer 24.x, or Node.js 26 and newer. `.nvmrc` selects Node.js 24.21.0. The published files have no Node.js requirement.
+- Tests use Vitest 5 and jsdom 30, and the type checks use TypeScript 7. The development tools need Node.js 22.22.2 or a newer 22.x, Node.js 24.15 or a newer 24.x, or Node.js 26 and newer. `.nvmrc` selects Node.js 24.21.0. The published files have no Node.js requirement.
 
 ## 1.0.7
 
