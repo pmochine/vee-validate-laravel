@@ -49,7 +49,7 @@ function loopThroughErrors(data) {
             messages[key] = data.errors[key].join(', ');
 
             this.$validator.errors.add({
-                key,
+                field: key,
                 msg: messages[key],
             });
         });
