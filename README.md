@@ -186,4 +186,4 @@ Oh come on. You read everything?? If you liked it so far, hit the ⭐️ button 
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md).
+See [CHANGELOG.md](https://github.com/pmochine/vee-validate-laravel/blob/master/CHANGELOG.md).

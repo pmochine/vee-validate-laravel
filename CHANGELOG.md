@@ -13,7 +13,7 @@ This is the last version. The package is no longer developed. vee-validate 3 and
 - The package contains the MIT license again, with the copyright notice of the original package by Robert Glyn Williams.
 - The package contains only `src/`, `README.md`, `LICENSE` and `package.json`. Before, it also contained `.eslintrc.js`.
 - The README shows how to use Laravel errors with vee-validate 3 and 4, and it lists the known issues of 1.x.
-- Development: lint with ESLint 9 and eslint-config-avidofood 4, tests with Vitest, CI on GitHub Actions. The development tools need Node.js 22.12 or newer. The published file has no Node.js requirement.
+- Development: lint with ESLint 9 and eslint-config-avidofood 4, tests with Vitest, CI on GitHub Actions. The development tools need Node.js 22.13 or a newer 22.x, Node.js 24, or Node.js 26 and newer. `.nvmrc` selects Node.js 24. The published file has no Node.js requirement.
 
 ## 1.0.6 and older
 
