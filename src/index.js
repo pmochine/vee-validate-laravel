@@ -1,6 +1,6 @@
 import {
     effectScope, getCurrentInstance, getCurrentScope, inject, onScopeDispose,
-    readonly, ref, toRaw, watch,
+    isRef, readonly, ref, toRaw, watch,
 } from 'vue';
 import { FormContextKey } from 'vee-validate';
 
@@ -233,31 +233,48 @@ function createController(form) {
     }
 
     function handleSubmit(callback, onInvalid) {
-        return form.handleSubmit(async (values, actions) => {
-            const request = generation;
-            const sent = snapshot(form.values);
-            const setLaravelErrors = (source) => {
-                const parsed = getLaravelErrors(source);
+        return (event) => {
+            // Set below, before the client validation runs. The callback runs after it.
+            let request;
+            const submit = form.handleSubmit(async (values, actions) => {
+                const sent = snapshot(form.values);
+                const setLaravelErrors = (source) => {
+                    const parsed = getLaravelErrors(source);
 
-                return parsed && request === generation ? apply(parsed, sent) : null;
-            };
-            try {
-                return await callback(values, { ...actions, setLaravelErrors });
-            } catch (error) {
-                const parsed = getLaravelErrors(error);
-                if (!parsed) throw error;
-                if (request === generation) apply(parsed, sent);
+                    return parsed && request === generation ? apply(parsed, sent) : null;
+                };
+                try {
+                    return await callback(values, { ...actions, setLaravelErrors });
+                } catch (error) {
+                    const parsed = getLaravelErrors(error);
+                    if (!parsed) throw error;
+                    if (request === generation) apply(parsed, sent);
 
-                return undefined;
-            }
-        }, onInvalid);
+                    return undefined;
+                }
+            }, onInvalid);
+            // handleSubmit() of vee-validate counts up synchronously, so the watcher on
+            // submitCount already started a new generation.
+            // A later submit, reset or clear() makes this one old.
+            const promise = submit(event);
+            request = generation;
+
+            return promise;
+        };
     }
 
     scope.run(() => {
         // handleSubmit() counts up before it validates, resetForm() sets the count back
         watch(() => form.submitCount.value, clear, { flush: 'sync' });
-        // resetForm() is the only place where vee-validate assigns new initial values
-        watch(() => form.meta?.value.initialValues, clear);
+        // resetForm() is the only place where vee-validate assigns new initial values.
+        // Synchronous, so a set() right after resetForm() stays.
+        watch(
+            () => (isRef(form.initialValues)
+                ? form.initialValues.value
+                : form.meta?.value.initialValues),
+            clear,
+            { flush: 'sync' },
+        );
         // Only the active paths are watched, so a form without server errors costs nothing
         watch(() => Object.keys(errors.value).map((path) => {
             const entry = entries.get(path);

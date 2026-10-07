@@ -459,6 +459,90 @@ describe('handleSubmit', () => {
         expect(form.errors.value.email).toBeUndefined();
     });
 
+    it('ignores an older submit that started in the same tick as a newer one', async () => {
+        const { form, laravel } = mountForm(['email'], { formOptions: { initialValues: { email: 'a' } } });
+        await settle();
+        let answerOlder;
+        const older = laravel.handleSubmit(async () => {
+            await new Promise((resolve) => { answerOlder = resolve; });
+            throw laravelError({ email: ['older'] });
+        })();
+        const newer = laravel.handleSubmit(() => 'saved')();
+        await newer;
+        answerOlder();
+        await older;
+        await settle();
+
+        expect(form.errors.value).toEqual({});
+    });
+
+    it('ignores an older submit whose client validation overlapped with a newer one', async () => {
+        let gate = false;
+        const rules = [];
+        const { form, laravel } = mountForm([], {
+            formOptions: { initialValues: { email: 'a' } },
+            extra: () => ({
+                field: useField('email', () => (gate ? new Promise((resolve) => { rules.push(resolve); }) : true)),
+            }),
+        });
+        await settle();
+        gate = true;
+        let answerOlder;
+        const older = laravel.handleSubmit(async () => {
+            await new Promise((resolve) => { answerOlder = resolve; });
+            throw laravelError({ email: ['stale'] });
+        })();
+        await flushPromises();
+        const newer = laravel.handleSubmit(() => 'saved')();
+        await flushPromises();
+        expect(rules).toHaveLength(2);
+
+        rules[0](true);
+        await flushPromises();
+        rules[1](true);
+        await newer;
+        answerOlder();
+        await older;
+        await settle();
+
+        expect(form.errors.value).toEqual({});
+    });
+
+    it('ignores a submit when clear() runs during its client validation', async () => {
+        let gate = false;
+        let resolveRule;
+        const { form, laravel } = mountForm([], {
+            formOptions: { initialValues: { email: 'a' } },
+            extra: () => ({
+                field: useField('email', () => (gate ? new Promise((resolve) => { resolveRule = resolve; }) : true)),
+            }),
+        });
+        await settle();
+        gate = true;
+        const pending = laravel.handleSubmit(() => { throw laravelError({ email: ['old'] }); })();
+        await flushPromises();
+
+        laravel.clear();
+        resolveRule(true);
+        await pending;
+        await settle();
+
+        expect(form.errors.value).toEqual({});
+    });
+
+    it('passes onInvalid to vee-validate', async () => {
+        let invalid;
+        const { laravel } = mountForm([], {
+            formOptions: { initialValues: { email: 'a' } },
+            extra: () => ({ field: useField('email', () => 'client') }),
+        });
+        await settle();
+
+        await laravel.handleSubmit(() => { throw new Error('must not run'); }, (context) => { invalid = context; })();
+
+        expect(invalid.errors.email).toBe('client');
+    });
+
     it('gives setLaravelErrors() to the callback, for example for the onError callback of Inertia', async () => {
         const { laravel, message } = mountForm(['email']);
         let onError;
@@ -645,6 +729,17 @@ describe('fixes of the Codex review', () => {
 
         expect(laravel.errors.value).toEqual({});
         expect(form.errors.value).toEqual({});
+    });
+
+    it('keeps errors that set() shows right after resetForm() in the same tick', async () => {
+        const { form, laravel } = mountForm(['email'], { formOptions: { initialValues: { email: 'a' } } });
+        await settle();
+
+        form.resetForm();
+        laravel.set(laravelError({ email: ['new'] }));
+        await settle();
+
+        expect(form.errors.value.email).toBe('new');
     });
 
     it('removes the server errors on resetForm() that keeps the submit count', async () => {
