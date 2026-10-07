@@ -1,11 +1,18 @@
 import type { Ref } from 'vue';
-import type { FormContext } from 'vee-validate';
 
 /** The messages of each field, by vee-validate path, for example `users[0].email`. */
 export type LaravelErrors = Record<string, string[]>;
 
-/** The parts of a vee-validate form that useLaravelErrors() uses. useForm() returns all of them. */
-export type LaravelErrorsForm = Pick<FormContext, 'values' | 'errorBag' | 'submitCount' | 'setFieldError'>;
+/**
+ * The parts of a vee-validate form that useLaravelErrors() uses. useForm() returns all of them.
+ * The type does not import vee-validate, so it also works in CommonJS projects.
+ */
+export interface LaravelErrorsForm {
+    values: object;
+    errorBag: Ref<Partial<Record<string, string[]>>>;
+    submitCount: Ref<number>;
+    setFieldError(field: string, message: string | string[] | undefined): void;
+}
 
 export interface UseLaravelErrorsReturn {
     /**
