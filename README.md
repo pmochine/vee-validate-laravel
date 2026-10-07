@@ -3,174 +3,186 @@
 [![Total Downloads on NPM](https://img.shields.io/npm/dt/%40pmochine%2Fvee-validate-laravel.svg)](https://www.npmjs.com/package/%40pmochine%2Fvee-validate-laravel)
 [![Software License](https://img.shields.io/badge/license-MIT-brightgreen.svg?style=flat-square)](LICENSE)
 
-This package adds Laravel validation errors to vee-validate 2 (Vue 2).
+This package shows Laravel validation errors in vee-validate 4 forms. Each error stays visible until the user changes the field or submits the form again.
 
-> You do not need this package with vee-validate 3 or 4. Both versions have a `setErrors` function that reads the Laravel error format directly. The sections below show how.
+> Requirements: Vue 3.3 or newer and vee-validate 4.12 or newer. For Vue 2 and vee-validate 2, use version 1.x, see [Version 1.x](#version-1x-vue-2).
 
-## Status
+## Why this package
 
-- The package is no longer developed. Version 1.0.7 is the last version.
-- Version 1.x supports only Vue 2 and vee-validate 2.
-- Vue 2 reached its end of life on December 31, 2023.
-- There is no version of this package for Vue 3. vee-validate 4 does the same job with `setErrors`.
+vee-validate has `setErrors` for server errors. But vee-validate replaces the errors of a field each time it validates the field. With the default configuration, vee-validate validates a field on `blur`. If the user only clicks into the field and out again, the message "The email has already been taken." goes away. The value did not change, and the server still rejects it. Users reported this problem in these vee-validate issues:
 
-## Laravel errors with vee-validate 4 (Vue 3)
+- [#4018](https://github.com/logaretm/vee-validate/issues/4018): Allow custom set errors to remain active while normal validation happens
+- [#4436](https://github.com/logaretm/vee-validate/issues/4436): Error immediately disappears after calling setErrors
+- [#4865](https://github.com/logaretm/vee-validate/issues/4865): setErrors method problem
 
-If a request expects JSON and validation fails, Laravel answers with the status 422 and a body like this:
+vee-validate cannot know how long a server error is valid, so it leaves this decision to the app.
 
-```json
-{
-    "message": "The name field is required. (and 1 more error)",
-    "errors": {
-        "name": ["The name field is required."],
-        "users.0.email": ["The users.0.email field is required."]
-    }
-}
-```
+`useLaravelErrors()` makes this decision for Laravel forms:
 
-Give the `errors` object to `setErrors`. With the Composition API:
+- A server error stays until the user changes the value of its field.
+- The next submit removes all errors of the previous response. This includes errors for keys without a field, for example `token`. vee-validate alone keeps these errors after a submit and after `resetForm()`.
+- If the user changes a field while the request runs, the response does not show an error for that field.
+- It reads errors from axios, from ofetch (`$fetch` in Nuxt), from Inertia and from the JSON body.
 
-```javascript
-import axios from 'axios';
-import { useForm } from 'vee-validate';
+For a simple form, `setErrors(error.response.data.errors)` from vee-validate can be enough. This package is for forms where server errors must stay visible until the user changes the value.
 
-const { handleSubmit, setErrors } = useForm();
-
-const onSubmit = handleSubmit(async (values) => {
-    try {
-        await axios.post('/example', values);
-    } catch (error) {
-        if (error.response?.status !== 422) throw error;
-        setErrors(error.response.data.errors);
-    }
-});
-```
-
-With the `<Form>` component, the submit handler gets `setErrors` in its second argument:
-
-```vue
-<script setup>
-import axios from 'axios';
-import { Form, Field, ErrorMessage } from 'vee-validate';
-
-async function onSubmit(values, { setErrors }) {
-    try {
-        await axios.post('/example', values);
-    } catch (error) {
-        if (error.response?.status !== 422) throw error;
-        setErrors(error.response.data.errors);
-    }
-}
-</script>
-
-<template>
-    <Form @submit="onSubmit">
-        <Field name="name" />
-        <ErrorMessage name="name" />
-        <Field name="users[0].email" />
-        <ErrorMessage name="users[0].email" />
-        <button>Save</button>
-    </Form>
-</template>
-```
-
-This is how vee-validate 4 handles the Laravel format. We tested it with vee-validate 4.15.1 and Vue 3.5.
-
-- Give nested fields names with brackets, for example `users[0].email`. Use the same name in `<Field>`, `useField` and `<ErrorMessage>`. Pass the Laravel keys such as `users.0.email` to `setErrors` without changes. vee-validate converts them to the bracket form. `<ErrorMessage name="users.0.email">` shows nothing.
-- Laravel sends a list of messages for each field. `useField().errors` and `useForm().errorBag` contain all messages. `errorMessage`, `<ErrorMessage>` and `useForm().errors` show only the first message.
-- The next validation of a field replaces its server error. With the default configuration, `<Field>` validates on `change` and `blur`, but not on `input`. `useField` validates on each change of its value. Each submit validates all fields.
-- Without a `validationSchema`, an error for a key without a field, for example `token`, stays in `useForm().errors`. The next submit and `resetForm()` do not remove it, and `meta.valid` stays `false`. Call `setFieldError('token', undefined)` to remove it. With a `validationSchema`, the next validation removes it.
-
-The official documentation: [Setting errors manually](https://vee-validate.logaretm.com/v4/guide/composition-api/handling-forms/) (Composition API) and [Handling forms](https://vee-validate.logaretm.com/v4/guide/components/handling-forms/) (components).
-
-## Laravel errors with vee-validate 3 (Vue 2)
-
-Call `setErrors` on the `ValidationObserver`. Each key must match the `vid` of a `ValidationProvider` exactly. Without a `vid`, the `name` counts. vee-validate 3 does not convert keys such as `users.0.email`, so use the Laravel key as the `vid`:
-
-```html
-<ValidationObserver ref="observer">
-    <ValidationProvider vid="email" name="E-mail" v-slot="{ errors }">
-        <input v-model="email" type="email">
-        <span>{{ errors[0] }}</span>
-    </ValidationProvider>
-</ValidationObserver>
-```
-
-In the submit method:
-
-```javascript
-axios.post('/example', data).catch((error) => {
-    if (!error.response || error.response.status !== 422) throw error;
-    this.$refs.observer.setErrors(error.response.data.errors);
-});
-```
-
-The official documentation: [Server-side validation](https://vee-validate.logaretm.com/v3/advanced/server-side-validation.html).
-
-## Version 1.x for vee-validate 2 (Vue 2)
-
-### Known issues
-
-- In the versions 1.0.4 to 1.0.6, `errors.has('name')` and `errors.first('name')` do not find the Laravel errors. The package stores each error under `key` instead of `field`. The messages are only in the return value of `$addLaravelErrors`, in `errors.items` and in `errors.all()`. Version 1.0.7 fixes this.
-- Version 1.0.3 adds no errors. `$addLaravelErrors` returns the response data instead of the messages.
-- `$addLaravelErrors` clears the error bag for each response with `data`, also for status codes other than 422.
-- `$addLaravelErrors` expects a list of messages for each field, as Laravel sends it.
-
-You can also replace the package with these lines in your component:
-
-```javascript
-axios.post('/example', data).catch((error) => {
-    if (!error.response || error.response.status !== 422) throw error;
-    const errors = error.response.data.errors;
-    this.$validator.errors.clear();
-    Object.keys(errors).forEach((field) => {
-        this.$validator.errors.add({ field, msg: errors[field].join(', ') });
-    });
-});
-```
-
-### Installation
-
-Install the package from [npm](https://www.npmjs.com/package/@pmochine/vee-validate-laravel):
+## Installation
 
 ```bash
 npm i @pmochine/vee-validate-laravel
 ```
 
-Add the package in your `main.js`:
+## Usage
 
-```javascript
-import Vue from 'vue';
-import VeeValidate from 'vee-validate';
-import VeeValidateLaravel from '@pmochine/vee-validate-laravel';
+Call `useLaravelErrors()` after `useForm()`. In the submit handler, give the error of the request to `set()`:
 
-Vue.use(VeeValidate);
-Vue.use(VeeValidateLaravel);
+```vue
+<script setup>
+import axios from 'axios';
+import { useForm, Field, ErrorMessage } from 'vee-validate';
+import { useLaravelErrors } from '@pmochine/vee-validate-laravel';
+
+const form = useForm();
+const laravel = useLaravelErrors(form);
+
+const onSubmit = form.handleSubmit(async (values) => {
+    try {
+        await axios.post('/users', values);
+    } catch (error) {
+        if (!laravel.set(error)) throw error;
+    }
+});
+</script>
+
+<template>
+    <form @submit="onSubmit">
+        <Field name="email" type="email" />
+        <ErrorMessage name="email" />
+        <Field name="users[0].name" />
+        <ErrorMessage name="users[0].name" />
+        <button>Save</button>
+    </form>
+</template>
 ```
 
-### Usage
+If the error is not a Laravel validation error, `set()` returns `null`. Examples are a network error or the status 500. The example then throws the error again.
 
-In Laravel:
+### Nuxt with `$fetch`
 
-```php
-$request->validate([
-    'name' => 'required|min:3|max:255'
-]);
-```
-
-In Vue:
+`$fetch` throws an error with the status and the body. Give it to `set()` the same way:
 
 ```javascript
-axios.post('/example', { name: this.name })
-    .catch((err) => {
-        // Adds the errors to the vee-validate error bag and returns them as an object
-        const errors = this.$addLaravelErrors(err.response);
+const onSubmit = form.handleSubmit(async (values) => {
+    try {
+        await $fetch('/api/users', { method: 'POST', body: values });
+    } catch (error) {
+        if (!laravel.set(error)) throw error;
+    }
+});
+```
 
-        if (errors) {
-            alert(errors[Object.keys(errors)[0]]);
-        }
+### Inertia
+
+Inertia gives the errors to `onError`. Wrap them in an object with the key `errors`:
+
+```javascript
+const onSubmit = form.handleSubmit((values) => {
+    router.post('/users', values, {
+        onError: (errors) => laravel.set({ errors }),
     });
+});
 ```
+
+### Native `fetch`
+
+`fetch` does not throw for the status 422. Read the JSON body and give it to `set()`:
+
+```javascript
+const onSubmit = form.handleSubmit(async (values) => {
+    const response = await fetch('/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(values),
+    });
+    if (response.status === 422) laravel.set(await response.json());
+});
+```
+
+### The `<Form>` component
+
+`useLaravelErrors()` needs the form in the same component or in a parent component. With `<Form>`, call `useLaravelErrors()` without an argument in a component inside `<Form>`. In most cases, `useForm()` as in the example above is simpler.
+
+## API
+
+### `useLaravelErrors(form?)`
+
+- `form`: the result of `useForm()`. Without it, the function uses the form of `useForm()` in the same component, or the form of a parent component, for example `<Form>`.
+- Call it in `setup()` or in `<script setup>`.
+
+It returns an object with these parts:
+
+| Part | Description |
+|---|---|
+| `set(source)` | Shows the errors of a Laravel 422 response. Removes the errors of an earlier response first. Returns the errors that it set, or `null`. |
+| `clear()` | Removes all server errors. Client errors stay. |
+| `errors` | A read-only ref with the server errors that are still active, for example `{ email: ['The email has already been taken.'] }`. |
+
+A server error goes away in these cases:
+
+- The user changes the value of its field. The message disappears during typing. This also applies to `<Field>`, which does not validate on `input`.
+- The form is submitted again with `handleSubmit()`, or `resetForm()` runs after a submit.
+- You call `clear()`, or `set()` with a new response.
+
+If you send the form without `handleSubmit()`, call `clear()` after a successful request.
+
+### `getLaravelErrors(source)`
+
+Reads the errors without a form. Returns an object with a list of messages for each field, or `null`.
+
+| Source | Example |
+|---|---|
+| axios error | `error` in `catch (error)` |
+| axios response | `error.response` |
+| ofetch error (`$fetch` in Nuxt) | `error` in `catch (error)` |
+| JSON body | `await response.json()` |
+| Object with an `errors` key | `{ errors }` from Inertia |
+
+If the source has a status other than 422, the result is `null`.
+
+## Things to know
+
+- Laravel sends nested keys in dot notation, for example `users.0.name`. `set()` writes them in the form of vee-validate: `users[0].name`. Use this name in `<Field>`, `useField` and `<ErrorMessage>`.
+- `<ErrorMessage>`, `errorMessage` and `form.errors` show the first message of a field. `useField().errors` and `form.errorBag` contain all messages.
+- An error for a key without a field, for example `token`, shows only in `form.errors` and in `laravel.errors`. Show it yourself, for example above the form. Until the next submit, it keeps `form.meta.valid` at `false`. So do not disable the submit button with `meta.valid` alone.
+- A field with an active server error has `meta.valid` set to `false`.
+
+## Version 1.x (Vue 2)
+
+Version 1.x is a Vue 2 plugin for vee-validate 2. It is on the [`1x` branch](https://github.com/pmochine/vee-validate-laravel/tree/1x) and gets no more updates.
+
+```bash
+npm i @pmochine/vee-validate-laravel@1
+```
+
+### Migration from 1.x
+
+| 1.x (Vue 2, vee-validate 2) | 2.x (Vue 3, vee-validate 4) |
+|---|---|
+| `Vue.use(VeeValidateLaravel)` | `const laravel = useLaravelErrors(form)` after `useForm()` |
+| `this.$addLaravelErrors(error.response)` | `laravel.set(error)` |
+| Returns `{ field: 'message 1, message 2' }` | Returns `{ field: ['message 1', 'message 2'] }` |
+| Clears the whole error bag first | Removes only the server errors of the previous response |
+
+## Development
+
+```bash
+npm install
+npm test          # unit tests and type checks
+npm run lint
+npm run build     # builds dist/
+```
+
+`npm pack` and `npm publish` build `dist/` first.
 
 ## Security
 
