@@ -63,6 +63,22 @@ describe('getLaravelErrors', () => {
         expect(getLaravelErrors('422')).toBeNull();
     });
 
+    it('returns null for a list instead of an errors object', () => {
+        expect(getLaravelErrors({ errors: ['failure'] })).toBeNull();
+    });
+
+    it('keeps a field named __proto__ as a normal key', () => {
+        const errors = getLaravelErrors(JSON.parse('{"errors":{"__proto__":["bad"]}}'));
+
+        expect(Object.keys(errors)).toEqual(['__proto__']);
+        expect(Object.getPrototypeOf(errors)).toBe(Object.prototype);
+        expect(Object.getOwnPropertyDescriptor(errors, '__proto__').value).toEqual(['bad']);
+    });
+
+    it('returns null for a fetch Response that is not parsed yet', () => {
+        expect(getLaravelErrors(new Response('{"errors":{"email":["x"]}}', { status: 422 }))).toBeNull();
+    });
+
     it('skips messages that are not text', () => {
         expect(getLaravelErrors({ errors: { email: ['ok', 3, null, ''], name: [] } })).toEqual({ email: ['ok'] });
     });

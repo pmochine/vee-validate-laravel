@@ -1,5 +1,6 @@
 import {
-    getCurrentInstance, inject, readonly, ref, watch,
+    effectScope, getCurrentInstance, getCurrentScope, inject, onScopeDispose,
+    readonly, ref, toRaw, watch,
 } from 'vue';
 import { FormContextKey } from 'vee-validate';
 
@@ -36,14 +37,11 @@ function getValue(values, path) {
         .reduce((value, segment) => (isObject(value) ? value[segment] : undefined), values);
 }
 
-// Copies plain objects and arrays. Other values, for example a File, stay the same object.
-function clone(value) {
-    if (Array.isArray(value)) return value.map(clone);
-    if (isPlainObject(value)) {
-        return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, clone(item)]));
-    }
-
-    return value;
+// The paths of the array items on the way to a path:
+// users[0].tags[1] gives users[0] and users[0].tags[1]
+function rowPaths(path) {
+    return [...path.matchAll(/\[\d+\]/g)]
+        .map((match) => path.slice(0, match.index + match[0].length));
 }
 
 function isEqual(a, b) {
@@ -59,6 +57,37 @@ function isEqual(a, b) {
     if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
 
     return Object.is(a, b);
+}
+
+/**
+ * Copies the form values. For each copied object or array it keeps the original object,
+ * so a later check can see whether an array item is still the same item.
+ */
+function snapshot(values) {
+    const originals = new WeakMap();
+    const copy = (value) => {
+        if (value instanceof Date) return new Date(value.getTime());
+        let result;
+        if (Array.isArray(value)) {
+            result = value.map(copy);
+        } else if (isPlainObject(value)) {
+            result = Object.fromEntries(
+                Object.entries(value).map(([key, item]) => [key, copy(item)]),
+            );
+        } else {
+            // Other values, for example a File, stay the same object
+            return value;
+        }
+        originals.set(result, toRaw(value));
+
+        return result;
+    };
+    const copied = copy(values);
+
+    return {
+        value: (path) => getValue(copied, path),
+        original: (path) => originals.get(getValue(copied, path)),
+    };
 }
 
 /**
@@ -78,18 +107,177 @@ export function getLaravelErrors(source) {
     // axios: response.data, ofetch: response._data or error.data, plain body: the object itself
     // eslint-disable-next-line no-underscore-dangle -- the name of the body in ofetch
     const bodies = [response.data, response._data, source.data, source];
-    const body = bodies.find((item) => isObject(item) && isObject(item.errors));
+    const body = bodies.find((item) => isObject(item) && isPlainObject(item.errors));
     if (!body) return null;
 
-    const errors = {};
-    Object.keys(body.errors).forEach((key) => {
-        const messages = [].concat(body.errors[key])
-            .filter((message) => typeof message === 'string' && message !== '');
-        if (messages.length) errors[toFormPath(key)] = messages;
+    // Object.fromEntries also keeps a key such as __proto__ as a normal key
+    const entries = Object.keys(body.errors)
+        .map((key) => [
+            toFormPath(key),
+            [].concat(body.errors[key])
+                .filter((message) => typeof message === 'string' && message !== ''),
+        ])
+        .filter(([, messages]) => messages.length);
+
+    return entries.length ? Object.fromEntries(entries) : null;
+}
+
+function createController(form) {
+    const scope = effectScope(true);
+    // The server errors that are still active, by vee-validate path
+    const errors = ref({});
+    // For each path: the messages, the value and the array items at the time of the request,
+    // the messages this package added, and the error list it wrote last
+    let entries = new Map();
+    // Counts up on each submit, reset, clear() and set().
+    // The response of an older request is ignored.
+    let generation = 0;
+
+    const errorsOf = (path) => form.errorBag.value[path];
+    // getPathState is not part of the public type, but useForm() returns it since vee-validate 4.10
+    const stateOf = (path) => (
+        typeof form.getPathState === 'function' ? form.getPathState(path) : undefined
+    );
+
+    function publish() {
+        errors.value = Object.fromEntries(
+            [...entries].map(([path, entry]) => [path, [...entry.messages]]),
+        );
+    }
+
+    // Removes the messages this package added.
+    // If vee-validate replaced the list since, they are gone already.
+    function release(path, entry) {
+        if (!entry.added.length || toRaw(errorsOf(path)) !== entry.written) return;
+        const rest = entry.written.slice(0, entry.written.length - entry.added.length);
+        form.setFieldError(path, rest.length ? rest : undefined);
+    }
+
+    function releaseAll() {
+        entries.forEach((entry, path) => release(path, entry));
+        entries = new Map();
+        publish();
+    }
+
+    function clear() {
+        generation += 1;
+        releaseAll();
+    }
+
+    function isUnchanged(path, entry) {
+        return isEqual(getValue(form.values, path), entry.value)
+            && entry.rows.every(
+                ([rowPath, original]) => toRaw(getValue(form.values, rowPath)) === original,
+            );
+    }
+
+    // vee-validate replaces the error list of a field each time it validates the field.
+    // This puts the server messages back while the value is unchanged,
+    // and drops them after a change.
+    function sync() {
+        let dropped = false;
+        entries.forEach((entry, path) => {
+            if (!isUnchanged(path, entry)) {
+                release(path, entry);
+                entries.delete(path);
+                dropped = true;
+
+                return;
+            }
+            if (entry.written && toRaw(errorsOf(path)) === entry.written) {
+                // The list is still ours. A silent validation can still mark the field as valid.
+                if (stateOf(path)?.valid) form.setFieldError(path, entry.written);
+
+                return;
+            }
+            const current = [...(errorsOf(path) || [])];
+            const added = entry.messages.filter((message) => !current.includes(message));
+            const written = [...current, ...added];
+            entries.set(path, { ...entry, added, written });
+            form.setFieldError(path, written);
+        });
+        if (dropped) publish();
+    }
+
+    function apply(parsed, values) {
+        releaseAll();
+        Object.entries(parsed).forEach(([path, messages]) => {
+            const rows = rowPaths(path)
+                .map((rowPath) => [rowPath, values.original(rowPath)])
+                .filter(([, original]) => original !== undefined);
+            entries.set(path, {
+                messages, value: values.value(path), rows, added: [], written: null,
+            });
+        });
+        sync();
+        publish();
+
+        return Object.fromEntries(
+            Object.entries(errors.value).map(([path, messages]) => [path, [...messages]]),
+        );
+    }
+
+    function set(source) {
+        const parsed = getLaravelErrors(source);
+        if (!parsed) return null;
+        generation += 1;
+
+        return apply(parsed, snapshot(form.values));
+    }
+
+    function handleSubmit(callback, onInvalid) {
+        return form.handleSubmit(async (values, actions) => {
+            const request = generation;
+            const sent = snapshot(form.values);
+            const setLaravelErrors = (source) => {
+                const parsed = getLaravelErrors(source);
+
+                return parsed && request === generation ? apply(parsed, sent) : null;
+            };
+            try {
+                return await callback(values, { ...actions, setLaravelErrors });
+            } catch (error) {
+                const parsed = getLaravelErrors(error);
+                if (!parsed) throw error;
+                if (request === generation) apply(parsed, sent);
+
+                return undefined;
+            }
+        }, onInvalid);
+    }
+
+    scope.run(() => {
+        // handleSubmit() counts up before it validates, resetForm() sets the count back
+        watch(() => form.submitCount.value, clear, { flush: 'sync' });
+        // resetForm() is the only place where vee-validate assigns new initial values
+        watch(() => form.meta?.value.initialValues, clear);
+        // Only the active paths are watched, so a form without server errors costs nothing
+        watch(() => Object.keys(errors.value).map((path) => {
+            const entry = entries.get(path);
+
+            return [
+                getValue(form.values, path),
+                entry && isUnchanged(path, entry),
+                errorsOf(path),
+                stateOf(path)?.valid,
+            ];
+        }), sync, { deep: true });
     });
 
-    return Object.keys(errors).length ? errors : null;
+    return {
+        owners: 0,
+        dispose() {
+            scope.stop();
+            clear();
+        },
+        api: {
+            set, clear, handleSubmit, errors: readonly(errors),
+        },
+    };
 }
+
+// One controller for each form, also if several components call useLaravelErrors()
+const controllers = new WeakMap();
 
 /**
  * Shows Laravel validation errors in a vee-validate form and keeps them visible
@@ -105,76 +293,28 @@ export function useLaravelErrors(form = injectForm()) {
         throw new Error('[vee-validate-laravel] useLaravelErrors() found no form. Call it after useForm() or pass the form.');
     }
 
-    // The server errors that are still active, by vee-validate path
-    const errors = ref({});
-    // The value of each path when the form was submitted
-    let snapshots = {};
-    // The form values at the start of the last submit
-    let submittedValues;
-
-    function removeMessages(path, messages) {
-        const current = form.errorBag.value[path] || [];
-        const rest = current.filter((message) => !messages.includes(message));
-        if (rest.length !== current.length) {
-            form.setFieldError(path, rest.length ? rest : undefined);
-        }
+    // useForm() and the injected form are different objects, but they share the errorBag
+    const key = toRaw(form.errorBag);
+    let controller = controllers.get(key);
+    if (!controller) {
+        controller = createController(form);
+        controllers.set(key, controller);
     }
 
-    function clear() {
-        Object.entries(errors.value).forEach(([path, messages]) => removeMessages(path, messages));
-        errors.value = {};
-        snapshots = {};
-    }
-
-    // vee-validate replaces the errors of a field each time it validates the field.
-    // This puts the server messages back while the value is unchanged,
-    // and drops them after a change.
-    function sync() {
-        const active = {};
-        Object.entries(errors.value).forEach(([path, messages]) => {
-            if (!isEqual(getValue(form.values, path), snapshots[path])) {
-                removeMessages(path, messages);
-
-                return;
+    if (getCurrentScope()) {
+        controller.owners += 1;
+        // When the last component that uses the form unmounts, its server errors go away
+        onScopeDispose(() => {
+            controller.owners -= 1;
+            if (controller.owners === 0) {
+                controller.dispose();
+                controllers.delete(key);
             }
-            active[path] = messages;
-            const current = form.errorBag.value[path] || [];
-            const missing = messages.filter((message) => !current.includes(message));
-            if (missing.length) form.setFieldError(path, [...current, ...missing]);
         });
-        if (Object.keys(active).length !== Object.keys(errors.value).length) errors.value = active;
+    } else {
+        // A call outside of a component keeps the controller for the life of the form
+        controller.owners = Infinity;
     }
 
-    /**
-     * Sets the errors of a Laravel 422 response. Errors of an earlier response go away.
-     *
-     * @param {unknown} source see getLaravelErrors()
-     * @return {?Object<string, string[]>} the errors that were set,
-     *                                      or null if the source has no Laravel validation errors
-     */
-    function set(source) {
-        const next = getLaravelErrors(source);
-        if (!next) return null;
-
-        clear();
-        const values = submittedValues ?? form.values;
-        Object.keys(next).forEach((path) => {
-            snapshots[path] = clone(getValue(values, path));
-        });
-        errors.value = next;
-        sync();
-
-        return next;
-    }
-
-    // handleSubmit() counts up before it validates, resetForm() sets the count back
-    watch(() => form.submitCount.value, (count) => {
-        clear();
-        submittedValues = count > 0 ? clone(form.values) : undefined;
-    }, { flush: 'sync' });
-
-    // Default flush: runs after vee-validate finished a validation, before the component renders
-    watch([() => form.errorBag.value, () => form.values], sync, { deep: true });
-
-    return { set, clear, errors: readonly(errors) };
+    return controller.api;
 }

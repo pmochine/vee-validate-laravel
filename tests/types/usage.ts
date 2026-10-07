@@ -1,5 +1,4 @@
 // Compile-time checks for src/index.d.ts. Run with: npm run test:types
-import type { Ref } from 'vue';
 import { useForm, useFormContext } from 'vee-validate';
 import {
     getLaravelErrors,
@@ -18,17 +17,31 @@ const laravel: UseLaravelErrorsReturn = useLaravelErrors(form);
 useLaravelErrors(useFormContext());
 useLaravelErrors();
 
+const onSubmit: (event?: Event) => Promise<number | undefined> = laravel.handleSubmit(
+    async (values: UserForm, { setLaravelErrors, setFieldValue }) => {
+        const email: string = values.email;
+        const set: LaravelErrors | null = setLaravelErrors({ errors: { email: 'x' } });
+        setFieldValue('email', email);
+
+        return set ? 1 : 2;
+    },
+);
+
 const set: LaravelErrors | null = laravel.set(new Error('any value'));
 laravel.clear();
-const active: Readonly<Ref<Readonly<LaravelErrors>>> = laravel.errors;
-const messages: string[] | undefined = active.value.email;
+const messages: readonly string[] | undefined = laravel.errors.value.email;
 
 const parsed: LaravelErrors | null = getLaravelErrors({ errors: { email: 'x' } });
 
 // @ts-expect-error the errors are read-only
 laravel.errors.value = {};
 
-// @ts-expect-error a form needs errorBag, submitCount and setFieldError
+// @ts-expect-error the message lists are read-only
+laravel.errors.value.email?.push('changed');
+
+// @ts-expect-error a form needs errorBag, submitCount, setFieldError and handleSubmit
 useLaravelErrors({ values: {} });
 
-export { set, messages, parsed };
+export {
+    onSubmit, set, messages, parsed,
+};
