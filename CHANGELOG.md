@@ -7,9 +7,13 @@ Version 2 is for Vue 3 and vee-validate 4. Version 1.x for Vue 2 is on the `1x` 
 ### Added
 
 - `useLaravelErrors(form?)` shows the errors of a Laravel 422 response in a vee-validate form. Each error stays until the user changes the value of its field, or until the next submit. vee-validate alone removes a server error each time it validates the field, for example on `blur`.
-- The next submit removes all server errors of the previous response, also errors for keys without a field. `resetForm()` after a submit does the same.
-- If a value changes while the request runs, the response shows no error for that field.
-- `getLaravelErrors(source)` reads the errors of a Laravel response. It accepts an axios error or response, an ofetch (`$fetch`) error, the JSON body, or an object with an `errors` key. For a status other than 422, it returns `null`.
+- `laravel.handleSubmit(callback)` works like `handleSubmit()` of vee-validate. It shows a Laravel 422 error that the callback throws. The errors belong to the values at the start of the callback. The response of an older submit is ignored. The callback gets `setLaravelErrors()` for Inertia and `fetch`.
+- `laravel.set(source)` shows the errors for the current values, for code that sends the form another way.
+- A field with an active server error stays invalid, also after a silent validation.
+- The next submit and `resetForm()` remove all server errors of the previous response, also errors for keys without a field.
+- If the user removes or moves a row of an array, an error does not move to another row.
+- All calls for one form share one state. When the last component that uses it unmounts, its server errors go away.
+- `getLaravelErrors(source)` reads the errors of a Laravel response. It accepts an axios error or response, an ofetch (`$fetch`) error, the JSON body, or an object with an `errors` object. For a status other than 422, it returns `null`.
 - TypeScript types.
 - An ES module and a UMD build, with `exports` and types for `import` and `require`.
 
