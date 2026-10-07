@@ -1,6 +1,6 @@
 {
   "name": "@pmochine/vee-validate-laravel",
-  "version": "1.0.7",
+  "version": "2.0.0",
   "description": "Shows Laravel validation errors in vee-validate 4 forms and keeps them until the user changes the field",
   "type": "commonjs",
   "main": "./dist/vee-validate-laravel.umd.js",
