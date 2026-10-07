@@ -1,8 +1,11 @@
 {
   "name": "@pmochine/vee-validate-laravel",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Adds simple laravel form validation support to vee-validate",
   "main": "src/vee-validate-laravel.js",
+  "files": [
+    "src"
+  ],
   "scripts": {
     "lint": "eslint .",
     "test": "vitest run"

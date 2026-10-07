@@ -9,7 +9,7 @@ This package adds Laravel validation errors to vee-validate 2 (Vue 2).
 
 ## Status
 
-- The package is no longer developed.
+- The package is no longer developed. Version 1.0.7 is the last version.
 - Version 1.x supports only Vue 2 and vee-validate 2.
 - Vue 2 reached its end of life on December 31, 2023.
 - There is no version of this package for Vue 3. vee-validate 4 does the same job with `setErrors`.
@@ -111,12 +111,12 @@ The official documentation: [Server-side validation](https://vee-validate.logare
 
 ### Known issues
 
-- In the versions 1.0.4 to 1.0.6, `errors.has('name')` and `errors.first('name')` do not find the Laravel errors. The package stores each error under `key` instead of `field`. The messages are only in the return value of `$addLaravelErrors`, in `errors.items` and in `errors.all()`.
+- In the versions 1.0.4 to 1.0.6, `errors.has('name')` and `errors.first('name')` do not find the Laravel errors. The package stores each error under `key` instead of `field`. The messages are only in the return value of `$addLaravelErrors`, in `errors.items` and in `errors.all()`. Version 1.0.7 fixes this.
 - Version 1.0.3 adds no errors. `$addLaravelErrors` returns the response data instead of the messages.
 - `$addLaravelErrors` clears the error bag for each response with `data`, also for status codes other than 422.
 - `$addLaravelErrors` expects a list of messages for each field, as Laravel sends it.
 
-You can replace the package with these lines in your component:
+You can also replace the package with these lines in your component:
 
 ```javascript
 axios.post('/example', data).catch((error) => {
@@ -183,3 +183,7 @@ Now comes the best part! 😍
  - Idea found on https://github.com/RobertGlynWilliams/vee-validate-laravel
 
 Oh come on. You read everything?? If you liked it so far, hit the ⭐️ button to give me a 🤩 face.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
