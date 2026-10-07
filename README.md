@@ -9,13 +9,14 @@ This package adds Laravel validation errors to vee-validate 2 (Vue 2).
 
 ## Status
 
+- The package is no longer developed.
 - Version 1.x supports only Vue 2 and vee-validate 2.
 - Vue 2 reached its end of life on December 31, 2023.
 - There is no version of this package for Vue 3. vee-validate 4 does the same job with `setErrors`.
 
 ## Laravel errors with vee-validate 4 (Vue 3)
 
-If validation fails, Laravel answers with the status 422 and a body like this:
+If a request expects JSON and validation fails, Laravel answers with the status 422 and a body like this:
 
 ```json
 {
@@ -66,6 +67,8 @@ async function onSubmit(values, { setErrors }) {
     <Form @submit="onSubmit">
         <Field name="name" />
         <ErrorMessage name="name" />
+        <Field name="users[0].email" />
+        <ErrorMessage name="users[0].email" />
         <button>Save</button>
     </Form>
 </template>
@@ -73,16 +76,27 @@ async function onSubmit(values, { setErrors }) {
 
 This is how vee-validate 4 handles the Laravel format. We tested it with vee-validate 4.15.1 and Vue 3.5.
 
-- A Laravel key such as `users.0.email` matches a field with the name `users[0].email` or `users.0.email`.
-- Laravel sends a list of messages for each field. `errorMessage` shows the first message. `errors` contains all of them.
-- If the user changes a field or submits the form again, the server error on that field goes away.
-- An error for a key without a field, for example `token`, stays in the `errors` of the form. The next submit and `resetForm()` do not remove it. Call `setFieldError('token', undefined)` to remove it.
+- Give nested fields names with brackets, for example `users[0].email`. Use the same name in `<Field>`, `useField` and `<ErrorMessage>`. Pass the Laravel keys such as `users.0.email` to `setErrors` without changes. vee-validate converts them to the bracket form. `<ErrorMessage name="users.0.email">` shows nothing.
+- Laravel sends a list of messages for each field. `useField().errors` and `useForm().errorBag` contain all messages. `errorMessage`, `<ErrorMessage>` and `useForm().errors` show only the first message.
+- The next validation of a field replaces its server error. With the default configuration, `<Field>` validates on `change` and `blur`, but not on `input`. `useField` validates on each change of its value. Each submit validates all fields.
+- Without a `validationSchema`, an error for a key without a field, for example `token`, stays in `useForm().errors`. The next submit and `resetForm()` do not remove it, and `meta.valid` stays `false`. Call `setFieldError('token', undefined)` to remove it. With a `validationSchema`, the next validation removes it.
 
 The official documentation: [Setting errors manually](https://vee-validate.logaretm.com/v4/guide/composition-api/handling-forms/) (Composition API) and [Handling forms](https://vee-validate.logaretm.com/v4/guide/components/handling-forms/) (components).
 
 ## Laravel errors with vee-validate 3 (Vue 2)
 
-Call `setErrors` on the `ValidationObserver`. This example uses `ref="observer"` on the observer:
+Call `setErrors` on the `ValidationObserver`. Each key must match the `vid` of a `ValidationProvider` exactly. Without a `vid`, the `name` counts. vee-validate 3 does not convert keys such as `users.0.email`, so use the Laravel key as the `vid`:
+
+```html
+<ValidationObserver ref="observer">
+    <ValidationProvider vid="email" name="E-mail" v-slot="{ errors }">
+        <input v-model="email" type="email">
+        <span>{{ errors[0] }}</span>
+    </ValidationProvider>
+</ValidationObserver>
+```
+
+In the submit method:
 
 ```javascript
 axios.post('/example', data).catch((error) => {
@@ -95,9 +109,12 @@ The official documentation: [Server-side validation](https://vee-validate.logare
 
 ## Version 1.x for vee-validate 2 (Vue 2)
 
-### Known issue in 1.0.4 to 1.0.6
+### Known issues
 
-In the versions 1.0.4 to 1.0.6, `errors.has('name')` and `errors.first('name')` do not find the Laravel errors. The package stores each error under `key` instead of `field`. Only the return value of `$addLaravelErrors` contains the messages.
+- In the versions 1.0.4 to 1.0.6, `errors.has('name')` and `errors.first('name')` do not find the Laravel errors. The package stores each error under `key` instead of `field`. The messages are only in the return value of `$addLaravelErrors`, in `errors.items` and in `errors.all()`.
+- Version 1.0.3 adds no errors. `$addLaravelErrors` returns the response data instead of the messages.
+- `$addLaravelErrors` clears the error bag for each response with `data`, also for status codes other than 422.
+- `$addLaravelErrors` expects a list of messages for each field, as Laravel sends it.
 
 You can replace the package with these lines in your component:
 
