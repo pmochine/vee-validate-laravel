@@ -24,6 +24,10 @@ Version 2 is for Vue 3 and vee-validate 4. Version 1.x for Vue 2 is on the `1x` 
 - Each field has a list of messages, for example `{ email: ['message 1', 'message 2'] }`. 1.x joined them to `'message 1, message 2'`.
 - Laravel keys such as `users.0.name` become vee-validate paths such as `users[0].name`.
 
+### Development
+
+- Tests use Vitest 5 and jsdom 30. The development tools need Node.js 22.22.2 or a newer 22.x, Node.js 24.15 or a newer 24.x, or Node.js 26 and newer. `.nvmrc` selects Node.js 24.21.0. The published files have no Node.js requirement.
+
 ## 1.0.7
 
 This is the last version. The package is no longer developed. vee-validate 3 and 4 do not need it. The README shows how they read Laravel errors with `setErrors`.
