@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.0.0
+## 2.0.0 - 2026-10-08
 
 Version 2 is for Vue 3 and vee-validate 4. Version 1.x for Vue 2 is on the `1x` branch.
 
