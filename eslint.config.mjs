@@ -1,11 +1,14 @@
 import avidofood from 'eslint-config-avidofood';
 
 export default [
+    {
+        // Build output
+        ignores: ['dist/**'],
+    },
     ...avidofood,
     {
-        rules: {
-            // A Vue 2 plugin adds its instance method to Vue.prototype
-            'no-param-reassign': ['error', { props: true, ignorePropertyModificationsFor: ['Vue'] }],
-        },
+        // The tests define small components next to each other
+        files: ['tests/**'],
+        rules: { 'vue/one-component-per-file': 'off' },
     },
 ];
